@@ -37,6 +37,12 @@ struct CpuState {
     sigset_t sigmask;
     stack_t sigaltstack;
     struct siginfo siginfo;
+
+#ifdef CC_PROFILE_CODECACHE
+    uint64_t code_cache_fast;   // Number of execution of the code cache fast path
+    uint64_t code_cache_slow;   // Number of execution of the code cache slow path
+    uint64_t code_cache_tran;   // Number of times client asks server do translate
+#endif
 };
 
 #define CPU_STATE_REGDATA_OFFSET 0x40
@@ -49,5 +55,11 @@ _Static_assert(offsetof(struct CpuState, quick_tlb) == CPU_STATE_QTLB_OFFSET,
 
 #define CPU_STATE_FROM_REGS(regdata) ((struct CpuState*) \
                                    ((char*) regdata - CPU_STATE_REGDATA_OFFSET))
+
+#ifdef CC_PROFILE_CODECACHE
+#define CPU_STATE_CC_FAST_OFFSET 0x44e8
+_Static_assert(offsetof(struct CpuState, code_cache_fast) == CPU_STATE_CC_FAST_OFFSET,
+               "CPU_STATE_CC_FAST_OFFSET mismatch");
+#endif
 
 #endif

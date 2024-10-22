@@ -60,8 +60,18 @@ resolve_func(struct CpuState* cpu_state, uintptr_t addr,
         addr = patch_data->sym_addr;
 
     void* func;
+
+#ifdef CC_PROFILE_CODECACHE
+    ++cpu_state->code_cache_slow;
+#endif
+
     int retval = rtld_resolve(&state->rtld, addr, &func);
     if (UNLIKELY(retval < 0)) {
+
+#ifdef CC_PROFILE_CODECACHE
+        ++cpu_state->code_cache_tran;
+#endif
+
         struct timespec start_time;
         struct timespec end_time;
         if (UNLIKELY(state->tc.tc_profile))
@@ -322,6 +332,12 @@ dispatch_regcall:
 2:  call [rax + QUICK_TLB_IDXSCALE*r10 - CPU_STATE_REGDATA_OFFSET + CPU_STATE_QTLB_OFFSET + 8];
 3:  mov r10, rcx;
     and r10, ((1 << QUICK_TLB_BITS) - 1) << QUICK_TLB_BITOFF;
+
+#ifdef CC_PROFILE_CODECACHE
+    // increase code_cache_fast by 1
+    inc qword ptr [rax - CPU_STATE_REGDATA_OFFSET + CPU_STATE_CC_FAST_OFFSET];
+#endif
+
     cmp rcx, [rax + QUICK_TLB_IDXSCALE*r10 - CPU_STATE_REGDATA_OFFSET + CPU_STATE_QTLB_OFFSET];
     je 2b;
 

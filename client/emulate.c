@@ -722,6 +722,41 @@ emulate_syscall_generic(struct CpuState* cpu_state, uint64_t* resp, uint64_t nr,
         struct stat tmp_struct;
 
     native:
+
+#ifdef CC_PROFILE_CODECACHE
+    if (nr == __NR_exit || nr == __NR_exit_group) {
+        // instrew-client exit point
+        if (UNLIKELY(cpu_state->state->tc.tc_profile)) {
+            dprintf(2, "Rewriting %u bytes took %u ms\n",
+                    (uint32_t) cpu_state->state->translator.written_bytes,
+                    (uint32_t) (cpu_state->state->rew_time / 1000000));
+        }
+        uint64_t code_cache_fast = cpu_state->code_cache_fast;
+        uint64_t code_cache_slow = cpu_state->code_cache_slow;
+        uint64_t code_cache_tran = cpu_state->code_cache_tran;
+        // code cache fast path instruction count is exactly 4
+        // however, slow path instruction count is uneasy to tell
+        // we estimate it by:
+        //   3 insts to invoke dispatch_regcall_fullresolve
+        //   20 insts to switch context and jump to resolve_func
+        //   46 insts to invoke rtld_resolve, rtld_patch and calculate hash
+        //   16 insts to execute rtld_resolve if code_cache_tran, or 20 insts if not
+        //   4 insts to execute rtld_patch
+        //   total (3 + 20 + 46 + 20 + 4) * code_cache_slow - 4 * code_cache_tran
+        //   (3 & 20 are counted in ASM_BLOCK of dispatch_regcall)
+        //   (46, 16, 20 & 4 are counted in instrew-client assembly code)
+        // note that the instruction count above is just ESTIMATED.
+        uint64_t fast_inst_count = 4 * code_cache_fast;
+        uint64_t slow_inst_count = 93 * code_cache_slow - 4 * code_cache_tran;
+        dprintf(2, "Client code cache count:\n");
+        dprintf(2, "  Code cache fast path: %lu\n", code_cache_fast);
+        dprintf(2, "  Code cache slow path: %lu\n", code_cache_slow);
+        dprintf(2, "  Code cache translate: %lu\n", code_cache_tran);
+        dprintf(2, "  Code cache fast path instruction: %lu\n", fast_inst_count);
+        dprintf(2, "  Code cache slow path instruction: %lu\n", slow_inst_count);
+    }
+#endif
+
         res = syscall(nr, arg0, arg1, arg2, arg3, arg4, arg5);
         break;
 

@@ -30,6 +30,12 @@ add_project_arguments(['-Wmissing-field-initializers',
 
 add_global_arguments(['-fno-rtti', '-fno-exceptions'], language: 'cpp')
 
+# add_global_arguments(['-DCC_PROFILE_COUNT'], language: 'cpp')
+# add_global_arguments(['-DCC_PROFILE_DUMPIN'], language: 'cpp')
+# add_global_arguments(['-DCC_PROFILE_DUMPIN'], language: 'c')
+# add_global_arguments(['-DCC_PROFILE_DUMPOUT'], language: 'cpp')
+# add_global_arguments(['-DCC_PROFILE_CODECACHE'], language: 'c')
+
 llvm_version = ['>=16', '<19']
 # First, attempt to use the shared library.
 libllvm = dependency('llvm', version: llvm_version, static: false,

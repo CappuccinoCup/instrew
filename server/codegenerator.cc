@@ -22,6 +22,10 @@
 #include <elf.h>
 #include <iostream>
 
+#ifdef CC_PROFILE_DUMPOUT
+#include <llvm/Transforms/Utils/Cloning.h>
+#endif
+
 
 namespace {
 
@@ -39,6 +43,11 @@ private:
     llvm::MCContext* mc_ctx;
     std::unique_ptr<llvm::TargetMachine> target;
     llvm::legacy::PassManager mc_pass_manager;
+
+#ifdef CC_PROFILE_DUMPOUT
+    std::unique_ptr<llvm::TargetMachine> target_dump;
+    llvm::legacy::PassManager asm_pass_manager;
+#endif
 
 public:
     impl(const IWServerConfig& server_config, bool pic,
@@ -108,9 +117,40 @@ public:
             std::cerr << "target doesn't support code gen" << std::endl;
             abort();
         }
+
+#ifdef CC_PROFILE_DUMPOUT
+        target_dump = std::unique_ptr<llvm::TargetMachine>(the_target->createTargetMachine(
+            /*TT=*/triple, /*CPU=*/"",
+            /*Features=*/"", /*Options=*/target_options,
+            /*RelocModel=*/rm,
+            /*CodeModel=*/cm,
+#if LL_LLVM_MAJOR < 18
+            /*OptLevel=*/static_cast<llvm::CodeGenOpt::Level>(unsigned(targetopt)),
+#else
+            /*OptLevel=*/llvm::CodeGenOpt::getLevel(targetopt).value_or(llvm::CodeGenOptLevel::Default),
+#endif
+            /*JIT=*/true
+        ));
+        if (!target_dump) {
+            std::cerr << "could not allocate profiling target machine" << std::endl;
+            abort();
+        }
+        llvm::CodeGenFileType fileType = llvm::CodeGenFileType::CGFT_AssemblyFile;
+        if (target_dump->addPassesToEmitFile(asm_pass_manager, llvm::errs(), nullptr, fileType)) {
+            std::cerr << "target doesn't support emit llvm assembly" << std::endl;
+            abort();
+        }
+#endif
     }
 
     void GenerateCode(llvm::Module* mod) {
+#ifdef CC_PROFILE_DUMPOUT
+        std::cerr << "OUT: " << std::endl;
+        auto dump_mod = llvm::CloneModule(*mod);
+        dump_mod->setDataLayout(target_dump->createDataLayout());
+        asm_pass_manager.run(*dump_mod);
+        std::cerr << std::endl;
+#endif
         mod->setDataLayout(target->createDataLayout());
         obj_buffer.clear();
         mc_pass_manager.run(*mod);

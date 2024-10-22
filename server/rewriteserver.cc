@@ -33,6 +33,17 @@
 #include <unordered_map>
 
 
+#ifdef CC_PROFILE_COUNT
+namespace cc_profile {
+    uint64_t num_trans_func = 0;    // Number of translated functions
+    uint64_t num_guest_instr = 0;   // Number of static guest instructions
+    uint64_t num_init_ir = 0;       // Number of initial IR
+    uint64_t num_modified_ir = 0;   // Number of Instrument/ChangeCallConv IR
+    uint64_t num_opt_ir = 0;        // Number of optimized IR
+    uint64_t num_gen_ir = 0;        // Number of IR after codegen
+}
+#endif
+
 namespace {
 
 enum class DumpIR {
@@ -262,6 +273,16 @@ public:
         }
         llvm::reportAndResetTimings(&llvm::errs());
         ll_config_free(rlcfg);
+
+#ifdef CC_PROFILE_COUNT
+        std::cerr << "Server count: " << std::endl;
+        std::cerr << "  Translated functions: " << std::dec << cc_profile::num_trans_func << std::endl;
+        std::cerr << "  Guest instrcutions: " << std::dec << cc_profile::num_guest_instr << std::endl;
+        std::cerr << "  Initial IR: " << std::dec << cc_profile::num_init_ir << std::endl;
+        std::cerr << "  Instrumented IR: " << std::dec << cc_profile::num_modified_ir << std::endl;
+        std::cerr << "  Optimized IR: " << std::dec << cc_profile::num_opt_ir << std::endl;
+        std::cerr << "  Codegen IR: " << std::dec << cc_profile::num_gen_ir << std::endl;
+#endif
     }
 
     void Translate(uintptr_t addr) {
@@ -284,6 +305,21 @@ public:
             iw_sendobj(iwc, addr, nullptr, 0, nullptr);
             return;
         }
+
+#if defined(CC_PROFILE_DUMPIN) || defined(CC_PROFILE_DUMPOUT)
+        std::cerr << "======= Translation Block 0x" << std::hex << addr << " =======\n" << std::endl;
+#endif
+
+#ifdef CC_PROFILE_DUMPIN
+        std::cerr << "IN: " << std::endl;
+        ll_func_print_instr(rlfn, addr);
+        std::cerr << std::endl;
+#endif
+
+#ifdef CC_PROFILE_COUNT
+        ++cc_profile::num_trans_func;
+        cc_profile::num_guest_instr += ll_func_get_instr_num(rlfn);
+#endif
 
         size_t hashConfigEnd = hashBuffer.size();
 
@@ -331,20 +367,35 @@ public:
         if (dumpIR.isSet(DumpIR::Lift))
             mod->print(llvm::errs(), nullptr);
 
+#ifdef CC_PROFILE_COUNT
+        cc_profile::num_init_ir += fn->getInstructionCount();
+#endif
         auto time_instrument_start = std::chrono::steady_clock::now();
         fn = ChangeCallConv(fn, instrew_cc);
         if (dumpIR.isSet(DumpIR::CC))
             mod->print(llvm::errs(), nullptr);
+
+#ifdef CC_PROFILE_COUNT
+        cc_profile::num_modified_ir += fn->getInstructionCount();
+#endif
 
         auto time_llvm_opt_start = std::chrono::steady_clock::now();
         optimizer.Optimize(fn);
         if (dumpIR.isSet(DumpIR::Opt))
             mod->print(llvm::errs(), nullptr);
 
+#ifdef CC_PROFILE_COUNT
+        cc_profile::num_opt_ir += fn->getInstructionCount();
+#endif
+
         auto time_llvm_codegen_start = std::chrono::steady_clock::now();
         codegen.GenerateCode(mod.get());
         if (dumpIR.isSet(DumpIR::CodeGen))
             mod->print(llvm::errs(), nullptr);
+
+#ifdef CC_PROFILE_COUNT
+        cc_profile::num_gen_ir += fn->getInstructionCount();
+#endif
 
         iw_sendobj(iwc, addr, obj_buffer.data(), obj_buffer.size(), hash);
 
